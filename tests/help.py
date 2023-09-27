@@ -7,6 +7,7 @@ from spl.token.constants import TOKEN_PROGRAM_ID
 from solders.sysvar import RENT
 from typing import Union
 from base58 import b58encode
+from spl.token.instructions import get_associated_token_address
 
 
 def deriveWormholeEmitterKey(emitter_program_id: str):
@@ -68,6 +69,25 @@ def deriveForeignContractKey(hello_token_program_id: Union[str, Pubkey], chain: 
     )
     return program_address
 
+def deriveTokenTransferMessageKey(
+        hello_token_program_id: Union[str, Pubkey],
+        next_seq: int
+):
+    if isinstance(hello_token_program_id, str):
+        program_id = Pubkey.from_string(hello_token_program_id)
+    else:
+        program_id = hello_token_program_id
+
+    seed = [b"bridged"]
+    seed.append(next_seq.to_bytes(length=8, byteorder="little", signed=False))
+
+    program_address, _nonce = Pubkey.find_program_address(
+        seed,
+        program_id
+    )
+    return program_address
+
+
 def deriveForeignEndPointKey(
         token_bridge_program_id: str,
         chain: int,
@@ -87,8 +107,8 @@ def deriveForeignEndPointKey(
     return program_address
 
 
-def getEmitterKeys(emitter_program_id: str, wormhole_program_id: str):
-    emitter = deriveWormholeEmitterKey(emitter_program_id)
+def getEmitterKeys(token_bridge_program_id: str, wormhole_program_id: str):
+    emitter = deriveWormholeEmitterKey(token_bridge_program_id)
     sequence = deriveEmitterSequenceKey(emitter, wormhole_program_id)
 
     return emitter, sequence
@@ -174,13 +194,10 @@ def derivePostedVaaKey(
 
     program_id = Pubkey.from_string(wormhole_program_id)
 
-    print(f"zjbtest hash=0x{hash.hex()}")
-
     seed = [b"PostedVAA"]
     seed.append(hash)
 
     program_address, _nonce = Pubkey.find_program_address(seed, program_id)
-    print(f"zjbtest vaa_key={program_address}")
     return program_address
 
 def deriveGuardianSetKey(
@@ -242,26 +259,47 @@ def deriveTmpTokenAccountKey(
     program_address, _nonce = Pubkey.find_program_address(seed, program_id)
     return program_address
 
-def getCompleteTransferWrappedAccounts(
+def getRedeemWrappedTransferAccounts(
         token_bridge_program_id: str,
         wormhole_program_id: str,
+        hello_token_program_id: str,
         payer: Pubkey,
         vaa: Union[str, bytes],
-        tmp_token_key: Pubkey = None,
 ):
     parsed_vaa = ParsedVaa.parse_vaa(vaa)
     token_transfer = TokenTransfer.parse_token_transfer_payload(parsed_vaa.payload)
 
-    mint = deriveWrappedMintKey(
+    wrapped_mint_key = deriveWrappedMintKey(
         token_bridge_program_id,
         token_transfer.token_chain,
         token_transfer.token_address
     )
 
+    tmp_token_key = deriveTmpTokenAccountKey(
+        hello_token_program_id,
+        wrapped_mint_key
+    )
+
+    recipient_key = Pubkey.from_bytes(token_transfer.recipient())
+
+    recipient_token_key = get_associated_token_address(recipient_key, wrapped_mint_key)
+    payer_token_key = get_associated_token_address(payer, wrapped_mint_key)
+
+    redeemer_config_key = deriveRedeemerConfigKey(hello_token_program_id)
+    foreign_contract_key = deriveForeignContractKey(
+        hello_token_program_id,
+        parsed_vaa.emitter_chain
+    )
+
     return {
-        "payer": payer,
-        "token_bridge_config": deriveTokenBridgeConfigKey(token_bridge_program_id),
         "vaa": derivePostedVaaKey(wormhole_program_id, parsed_vaa.hash),
+        "tmp_token_key": tmp_token_key,
+        "redeemer_config_key": redeemer_config_key,
+        "payer_token_key": payer_token_key,
+        "recipient": recipient_key,
+        "recipient_token_key": recipient_token_key,
+        "foreign_contract_key": foreign_contract_key,
+        "token_bridge_config": deriveTokenBridgeConfigKey(token_bridge_program_id),
         "token_bridge_claim": deriveClaimKey(
             token_bridge_program_id,
             parsed_vaa.emitter_address,
@@ -273,18 +311,70 @@ def getCompleteTransferWrappedAccounts(
             parsed_vaa.emitter_chain,
             parsed_vaa.emitter_address
         ),
-        "redeemer": Pubkey.from_bytes(token_transfer.redeemer),
-        # "token_bridge_redeemer": deriveRedeemerConfigKey(hello_token_program_id),
-        "to_fees_token": Pubkey.from_bytes(token_transfer.redeemer) if tmp_token_key is None else tmp_token_key,
-        "token_bridge_wrapped_mint": mint,
-        "token_bridge_wrapped_meta": deriveWrappedMetaKey(token_bridge_program_id, mint),
+        "token_bridge_wrapped_mint": wrapped_mint_key,
+        "token_bridge_wrapped_meta": deriveWrappedMetaKey(
+            token_bridge_program_id,
+            wrapped_mint_key
+        ),
         "token_bridge_mint_authority": deriveMintAuthorityKey(token_bridge_program_id),
-        "rent": RENT,
-        "system_program": SYSTEM_PROGRAM_ID,
-        "token_program": TOKEN_PROGRAM_ID,
         "wormhole_program": Pubkey.from_string(wormhole_program_id),
         "token_bridge_program": Pubkey.from_string(token_bridge_program_id)
     }
+
+def getSendWrappedTransferAccounts(
+        token_bridge_program_id: str,
+        wormhole_program_id: str,
+        hello_token_program_id: str,
+        recipient_chain: int,
+        recipient_token: bytes,
+):
+    wrapped_mint_key = deriveWrappedMintKey(
+        token_bridge_program_id,
+        recipient_chain,
+        recipient_token
+    )
+
+    tmp_token_key = deriveTmpTokenAccountKey(
+        hello_token_program_id,
+        wrapped_mint_key
+    )
+
+    send_config_key = deriveSenderConfigKey(hello_token_program_id)
+
+    foreign_contract_key = deriveForeignContractKey(
+        hello_token_program_id,
+        recipient_chain
+    )
+
+    token_bridge_emitter, token_bridge_sequence = getEmitterKeys(
+        token_bridge_program_id,
+        wormhole_program_id
+    )
+
+    bridge_data_key = deriveWormholeBridgeDataKey(wormhole_program_id)
+    fee_collector_key = deriveFeeCollectorKey(wormhole_program_id)
+
+    authority_signer_key = deriveAuthoritySignerKey(token_bridge_program_id)
+
+    return {
+        "send_config": send_config_key,
+        "foreign_contract": foreign_contract_key,
+        "token_bridge_wrapped_mint": wrapped_mint_key,
+        "tmp_token_account": tmp_token_key,
+        "wormhole_program": Pubkey.from_string(wormhole_program_id),
+        "token_bridge_program": Pubkey.from_string(token_bridge_program_id),
+        "token_bridge_wrapped_meta": deriveWrappedMetaKey(
+            token_bridge_program_id,
+            wrapped_mint_key
+        ),
+        "token_bridge_config": deriveTokenBridgeConfigKey(token_bridge_program_id),
+        "token_bridge_authority_signer": authority_signer_key,
+        "wormhole_bridge": bridge_data_key,
+        "token_bridge_emitter": token_bridge_emitter,
+        "token_bridge_sequence": token_bridge_sequence,
+        "wormhole_fee_collector": fee_collector_key,
+    }
+
 
 class ParsedVaa:
     def __init__(

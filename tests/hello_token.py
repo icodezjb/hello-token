@@ -6,7 +6,6 @@ from solana.transaction import Transaction
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
-from spl.token.instructions import get_associated_token_address
 
 from hellotoken.instructions import (
     initialize,
@@ -21,8 +20,10 @@ from help import (
     deriveForeignContractKey,
     getTokenBridgeDerivedAccounts,
     deriveForeignEndPointKey,
-    getCompleteTransferWrappedAccounts,
-    ParsedVaa, TokenTransfer, deriveTmpTokenAccountKey, deriveWrappedMintKey
+    getRedeemWrappedTransferAccounts,
+    getSendWrappedTransferAccounts,
+    deriveTokenTransferMessageKey,
+    ParsedVaa
 )
 
 # solana-devnet
@@ -143,72 +144,36 @@ async def hellotoken_redeem_wrapped_transfer_with_payload(vaa: str):
     payer = await get_payer()
 
     parsed_vaa = ParsedVaa.parse_vaa(vaa)
-    token_transfer = TokenTransfer.parse_token_transfer_payload(parsed_vaa.payload)
 
-    wrapped_mint_key = deriveWrappedMintKey(
-        token_bridge_program_id,
-        token_transfer.token_chain,
-        token_transfer.token_address
-    )
-
-    tmp_token_key = deriveTmpTokenAccountKey(
-        PROGRAM_ID,
-        wrapped_mint_key
-    )
-
-    token_bridge_accounts = getCompleteTransferWrappedAccounts(
+    redeem_wrapped_accounts = getRedeemWrappedTransferAccounts(
         token_bridge_program_id,
         wormhole_program_id,
-        payer.pubkey(),
-        vaa,
-        tmp_token_key
-    )
-
-    assert token_bridge_accounts["token_bridge_wrapped_mint"] == wrapped_mint_key
-
-    recipient = token_transfer.recipient()
-
-    recipient_token_key = get_associated_token_address(
-        Pubkey.from_bytes(recipient),
-        token_bridge_accounts["token_bridge_wrapped_mint"]
-    )
-
-    print(f"recipient_token_key: {recipient_token_key}")
-
-    payer_token_key = get_associated_token_address(
-        token_bridge_accounts["payer"],
-        token_bridge_accounts["token_bridge_wrapped_mint"]
-    )
-    redeemer_config_key = deriveRedeemerConfigKey(PROGRAM_ID)
-
-    foreign_contract_key = deriveForeignContractKey(
         PROGRAM_ID,
-        parsed_vaa.emitter_chain
+        payer.pubkey(),
+        vaa
     )
-
-    print(f"mint_key: {wrapped_mint_key}")
 
     ix = redeem_wrapped_transfer_with_payload(
         args={
             "vaa_hash": parsed_vaa.hash
         },
         accounts={
-            "payer": token_bridge_accounts["payer"],
-            "payer_token_account": payer_token_key,
-            "config": redeemer_config_key,
-            "foreign_contract": foreign_contract_key,
-            "token_bridge_wrapped_mint": token_bridge_accounts["token_bridge_wrapped_mint"],
-            "recipient_token_account": recipient_token_key,
-            "recipient": Pubkey.from_bytes(recipient),
-            "tmp_token_account": tmp_token_key,
-            "wormhole_program": token_bridge_accounts["wormhole_program"],
-            "token_bridge_program": token_bridge_accounts["token_bridge_program"],
-            "token_bridge_wrapped_meta": token_bridge_accounts["token_bridge_wrapped_meta"],
-            "token_bridge_config": token_bridge_accounts["token_bridge_config"],
-            "vaa": token_bridge_accounts["vaa"],
-            "token_bridge_claim": token_bridge_accounts["token_bridge_claim"],
-            "token_bridge_foreign_endpoint": token_bridge_accounts["token_bridge_foreign_endpoint"],
-            "token_bridge_mint_authority": token_bridge_accounts["token_bridge_mint_authority"]
+            "payer": payer.pubkey(),
+            "payer_token_account": redeem_wrapped_accounts["payer_token_key"],
+            "config": redeem_wrapped_accounts["redeemer_config_key"],
+            "foreign_contract": redeem_wrapped_accounts["foreign_contract_key"],
+            "token_bridge_wrapped_mint": redeem_wrapped_accounts["token_bridge_wrapped_mint"],
+            "recipient_token_account": redeem_wrapped_accounts["recipient_token_account"],
+            "recipient": redeem_wrapped_accounts["recipient"],
+            "tmp_token_account": redeem_wrapped_accounts["tmp_token_key"],
+            "wormhole_program": redeem_wrapped_accounts["wormhole_program"],
+            "token_bridge_program": redeem_wrapped_accounts["token_bridge_program"],
+            "token_bridge_wrapped_meta": redeem_wrapped_accounts["token_bridge_wrapped_meta"],
+            "token_bridge_config": redeem_wrapped_accounts["token_bridge_config"],
+            "vaa": redeem_wrapped_accounts["vaa"],
+            "token_bridge_claim": redeem_wrapped_accounts["token_bridge_claim"],
+            "token_bridge_foreign_endpoint": redeem_wrapped_accounts["token_bridge_foreign_endpoint"],
+            "token_bridge_mint_authority": redeem_wrapped_accounts["token_bridge_mint_authority"]
         },
     )
 
@@ -223,4 +188,73 @@ async def hellotoken_redeem_wrapped_transfer_with_payload(vaa: str):
     await client.close()
 
 
-asyncio.run(get_payer())
+async def hellotoken_send_wrapped_tokens_with_payload():
+    client = AsyncClient(rpc_url)
+    await client.is_connected()
+
+    payer = await get_payer()
+
+    # sui-testnet
+    recipient_chain = 21
+    # coin10
+    recipient_token = bytes.fromhex("bda28aeb93874baba2273db9c92fb7b7fe2f412352e9633c0258978a32620a23")
+    # wrapper coin10
+    coin10_from_account = Pubkey.from_string("H9FHrVoHSA8B1akWr4gvFHSb7MnDtr69kjjnD7BWnNmL")
+    # send amount(decimals=8), 1 coin
+    amount = 100000000
+    # recipient
+    recipient_address = bytes.fromhex("e76e8792889a2c3d6f7cf3b8b21be9c9f162ae98e1f218f23ac6d09e70931a2d")
+
+    send_wrapped_accounts = getSendWrappedTransferAccounts(
+        token_bridge_program_id,
+        wormhole_program_id,
+        PROGRAM_ID,
+        recipient_chain,
+        recipient_token
+    )
+
+    current_sequence = await client.get_account_info(send_wrapped_accounts["token_bridge_sequence"])
+
+    next_seq = int.from_bytes(current_sequence.value.data, byteorder='little') + 1
+    wormhole_message = deriveTokenTransferMessageKey(PROGRAM_ID, next_seq)
+
+    ix = send_wrapped_tokens_with_payload(
+        args={
+            "batch_id": 0,
+            "amount": amount,
+            "recipient_address": list(recipient_address),
+            "recipient_chain": recipient_chain
+        },
+        accounts={
+            "payer": payer.pubkey(),
+            "config": send_wrapped_accounts["send_config"],
+            "foreign_contract": send_wrapped_accounts["foreign_contract"],
+            "token_bridge_wrapped_mint": send_wrapped_accounts["token_bridge_wrapped_mint"],
+            "from_token_account": coin10_from_account,
+            "tmp_token_account": send_wrapped_accounts["tmp_token_account"],
+            "wormhole_program": send_wrapped_accounts["wormhole_program"],
+            "token_bridge_program": send_wrapped_accounts["token_bridge_program"],
+            "token_bridge_wrapped_meta": send_wrapped_accounts["token_bridge_wrapped_meta"],
+            "token_bridge_config": send_wrapped_accounts["token_bridge_config"],
+            "token_bridge_authority_signer": send_wrapped_accounts["token_bridge_authority_signer"],
+            "wormhole_bridge": send_wrapped_accounts["wormhole_bridge"],
+            "wormhole_message": wormhole_message,
+            "token_bridge_emitter": send_wrapped_accounts["token_bridge_emitter"],
+            "token_bridge_sequence": send_wrapped_accounts["token_bridge_sequence"],
+            "wormhole_fee_collector": send_wrapped_accounts["wormhole_fee_collector"]
+        }
+    )
+
+    tx = Transaction(fee_payer=payer.pubkey()).add(ix)
+
+    tx_sig = await client.send_transaction(tx, payer)
+    print(tx_sig)
+
+    resp = await client.get_transaction(tx_sig.value)
+    print(resp)
+
+
+    await client.close()
+
+
+asyncio.run(hellotoken_send_wrapped_tokens_with_payload())
