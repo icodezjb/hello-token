@@ -1,0 +1,9 @@
+sui client call --gas-budget 1000000000  \
+    --package 0x2 --module coin --function mint_and_transfer \
+    --args 0xe17b362339e1c2963d490541e4f0265e8eb0b10af77c74c7983c1ec31889a692 \
+    1000000000000 0x8b68173fc1710e8cbbfb35f12dea2ca0482e90c0706c647ab24d8f26a3066dd6 \
+     --type-args 0xaf7326650ca2fd01227db4009ffe7cd805a60779712482be9462e9ef62cc4bbf::coin_10::COIN_10
+
+
+
+

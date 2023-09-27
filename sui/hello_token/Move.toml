@@ -1,0 +1,26 @@
+[package]
+name = "HelloToken"
+version = "0.2.0"
+published-at = "0x7810619e7fa2cffcdd04509fde0fc47b1aed2ff021c2cbe94d711ab8202d944e"
+
+[dependencies.Sui]
+git = "https://github.com/MystenLabs/sui.git"
+subdir = "crates/sui-framework/packages/sui-framework"
+rev = "09b2081498366df936abae26eea4b2d5cafb2788"
+
+[dependencies.Wormhole]
+local = "../wormhole"
+
+[dependencies.TokenBridge]
+local = "../token_bridge"
+
+[dependencies.ExampleCoins]
+local = "../example_coins"
+
+[addresses]
+hello_token = "0x7810619e7fa2cffcdd04509fde0fc47b1aed2ff021c2cbe94d711ab8202d944e"
+example_coins = "0xaf7326650ca2fd01227db4009ffe7cd805a60779712482be9462e9ef62cc4bbf"
+token_bridge = "0x562760fc51d90d4ae1835bac3e91e0e6987d3497b06f066941d3e51f6e8d76d0"
+wormhole = "0xf47329f4344f3bf0f8e436e2f7b485466cff300f12a166563995d3888c296a94"
+token_bridge_core = "0x6fb10cdb7aa299e9a4308752dadecb049ff55a892de92992a1edbd7912b3d6da"
+wormhole_core = "0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790"

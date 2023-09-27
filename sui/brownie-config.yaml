@@ -1,0 +1,24 @@
+dotenv: .env
+networks:
+  default: sui-testnet
+  sui-testnet:
+    node_url: https://fullnode.testnet.sui.io
+    OBJECTS:
+      CoinMetadata8: "0x04781ce9def02ff7a71816b341c6c7db129d904c7f0c65d02162927961e74d09"
+      CoinMetadata10: "0xbda28aeb93874baba2273db9c92fb7b7fe2f412352e9633c0258978a32620a23"
+      TreasuryCap8: "0x9f4810172cf13bef90c6969970422dca19df0c9cd0ecd5970d24999d37d53fa4"
+      TreasuryCap10: "0xe17b362339e1c2963d490541e4f0265e8eb0b10af77c74c7983c1ec31889a692"
+      OwnerCap: "0x7d9c5c5bfabd779639f936b12d01790a410b96a65ffbd58dc7cab6857f4e29d5"
+      UpgradeCap: "0x956b8c46d1843c453b842a8dcc6cdea4244bd755026c89aaaee18aa5b3532489"
+      WormholeState: "0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790"
+      TokenBridgeState: "0x6fb10cdb7aa299e9a4308752dadecb049ff55a892de92992a1edbd7912b3d6da"
+      HelloTokenState: "0xa8af6612f976dd3f84eb732ed96ca5a50d2697b73397439d185eedc65b0fc0ad"
+    example_coins: "0xaf7326650ca2fd01227db4009ffe7cd805a60779712482be9462e9ef62cc4bbf"
+    hello_token: "0x7810619e7fa2cffcdd04509fde0fc47b1aed2ff021c2cbe94d711ab8202d944e"
+    token_bridge: "0x562760fc51d90d4ae1835bac3e91e0e6987d3497b06f066941d3e51f6e8d76d0"
+    wormhole: "0xf47329f4344f3bf0f8e436e2f7b485466cff300f12a166563995d3888c296a94"
+    solana_program: "EvTsJYjLKCK1iMX9aExiYEBxdNBGgY8FQ7NFRd2jJNk5"
+
+sui_wallets:
+  from_mnemonic:
+    TestAccount: ${DEFAULT}
