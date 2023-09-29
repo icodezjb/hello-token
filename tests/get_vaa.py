@@ -37,5 +37,5 @@ def parse_coin_meta(vaa: str):
 
 
 if __name__ == '__main__':
-    # print(ParsedVaa.parse_vaa(get_sui_signed_vaa("120")))
-    print((get_solana_signed_vaa("25485")))
+    print(get_sui_signed_vaa("126"))
+    # print((get_solana_signed_vaa("25487")))
